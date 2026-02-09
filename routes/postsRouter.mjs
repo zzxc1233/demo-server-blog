@@ -1,5 +1,6 @@
 import connectionPool from "../utils/db.mjs";
 import { Router } from "express";
+import validatePost from "../middleware/postValidation.mjs";
 
 const postsRouter = Router();
 
@@ -12,7 +13,7 @@ postsRouter.get("/", async (_req, res) => {
 });
 
 // นักเขียนสามารถสร้างบทความได้
-postsRouter.post("/", async (req, res) => {
+postsRouter.post("/", validatePost, async (req, res) => {
     const newPost = req.body;
 
     try {
@@ -72,7 +73,7 @@ postsRouter.get("/:id", async (req, res) => {
 });
 
 // นักเขียนสามารถแก้ไขบทความที่ได้เคยสร้างไว้ก่อนหน้านี้
-postsRouter.put("/:id", async (req, res) => {
+postsRouter.put("/:id", validatePost, async (req, res) => {
     const { id } = req.params;
     const updatedPost = req.body;
 
