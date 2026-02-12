@@ -1,8 +1,21 @@
 import connectionPool from "../utils/db.mjs";
 import { Router } from "express";
 import validatePost from "../middleware/postValidation.mjs";
+import { createClient } from "@supabase/supabase-js";
+import multer from "multer";
+import protectAdmin from "../middleware/protectAdmin.mjs";
+
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
 
 const postsRouter = Router();
+const multerUpload = multer({ storage: multer.memoryStorage() });
+
+const imageFileUpload = multerUpload.fields([
+    { name: "imageFile", maxCount: 1 },
+]);
 
 // นักเขียนสามารถดูข้อมูลบทความทั้งหมดได้
 postsRouter.get("/", async (req, res) => {
@@ -51,7 +64,7 @@ postsRouter.get("/", async (req, res) => {
             FROM posts
             INNER JOIN categories ON posts.category_id = categories.id
             INNER JOIN statuses ON posts.status_id = statuses.id`;
-        let countValues = values.slice(0, -2); 
+        let countValues = values.slice(0, -2);
 
         if (category && keyword) {
             countQuery += `
@@ -92,21 +105,40 @@ postsRouter.get("/", async (req, res) => {
 });
 
 // นักเขียนสามารถสร้างบทความได้
-postsRouter.post("/", validatePost, async (req, res) => {
-    const newPost = req.body;
-
+postsRouter.post("/", [protectAdmin, validatePost, imageFileUpload], async (req, res) => {
     try {
+        const newPost = req.body;
+        const file = req.files?.imageFile?.[0];
+        const bucketName = "personal-blog";
+        const filePath = `posts/${Date.now()}_${file.originalname}`;
+        const { data, error } = await supabase.storage
+            .from(bucketName)
+            .upload(filePath, file.buffer, {
+                contentType: file.mimetype,
+            });
+
+        if (error) {
+            return res.status(500).json({
+                message: "Server could not upload image to storage",
+                error: error.message
+            });
+        }
+
+        const {
+            data: { publicUrl },
+        } = supabase.storage.from(bucketName).getPublicUrl(data.path);
+
         const result = await connectionPool.query(
             `INSERT INTO posts (title, image, category_id, description, content, status_id) 
             VALUES ($1, $2, $3, $4, $5, $6) 
             RETURNING *`,
             [
                 newPost.title,
-                newPost.image,
-                newPost.category_id,
+                publicUrl,
+                parseInt(newPost.category_id),
                 newPost.description,
                 newPost.content,
-                newPost.status_id
+                parseInt(newPost.status_id)
             ]
         )
 
