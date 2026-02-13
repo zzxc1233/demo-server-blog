@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { createClient } from "@supabase/supabase-js";
 import connectionPool from "../utils/db.mjs";
+import upload from "../middleware/upload.mjs";
+
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -107,17 +109,18 @@ authRouter.get("/get-user", async (req, res) => {
             username: rows[0].username,
             name: rows[0].name,
             role: rows[0].role,
-            profilePic: rows[0].profile_pic,
+            profile_pic: rows[0].profile_pic,
         });
     } catch (error) {
         res.status(500).json({ error: "Internal server error" });
     }
 });
 
-authRouter.put("/update-profile", async (req, res) => {
+authRouter.put("/update-profile", upload.single("profile_pic"), async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(" ")[1];
-    const { username, name, profile_pic } = req.body;
+    const { username, name } = req.body;
+    const file = req.file;
 
     if (!token) {
         return res.status(401).json({ error: "Unauthorized: Token missing" });
@@ -130,14 +133,39 @@ authRouter.put("/update-profile", async (req, res) => {
             return res.status(401).json({ error: "Invalid or expired token" });
         }
 
+        let finalProfilePicUrl = req.body.profile_pic;
+        if (file) {
+            // ตั้งชื่อไฟล์ใหม่ให้ไม่ซ้ำ (เช่น user_id + timestamp)
+            const fileExt = file.originalname.split('.').pop();
+            const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+            const filePath = `avatars/${fileName}`;
+
+            // อัปโหลดไฟล์ไปที่ Supabase Storage Bucket
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('personal-blog') // ต้องชื่อตรงกับ bucket ที่สร้างใน supabase และตั้งเป็น public
+                .upload(filePath, file.buffer, {
+                    contentType: file.mimetype,
+                    upsert: true
+                });
+
+            if (uploadError) throw uploadError;
+
+            // ดึง Public URL ของไฟล์ที่เพิ่งอัปโหลด
+            const { data: { publicUrl } } = supabase.storage
+                .from('personal-blog')
+                .getPublicUrl(filePath);
+
+            finalProfilePicUrl = publicUrl;
+        }
+
         const { data, error: dbError } = await supabase
-            .from('users') // ชื่อตารางตาม Schema
+            .from('users')
             .update({
                 username: username,
                 name: name,
-                profile_pic: profile_pic, // ใช้ชื่อคอลัมน์ profile_pic ตาม Schema
+                profile_pic: finalProfilePicUrl,
             })
-            .eq('id', user.id.trim()) // อัปเดตเฉพาะแถวที่มี ID ตรงกับคน Login
+            .eq('id', user.id.trim())
             .select();
 
         if (!data || data.length === 0) {
@@ -148,7 +176,6 @@ authRouter.put("/update-profile", async (req, res) => {
         }
 
         if (dbError) {
-            // หาก username ซ้ำหรือ Database มีปัญหา
             return res.status(400).json({ error: dbError.message });
         }
 
