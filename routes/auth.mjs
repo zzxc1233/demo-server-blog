@@ -114,6 +114,55 @@ authRouter.get("/get-user", async (req, res) => {
     }
 });
 
+authRouter.put("/update-profile", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    const { username, name, profile_pic } = req.body;
+
+    if (!token) {
+        return res.status(401).json({ error: "Unauthorized: Token missing" });
+    }
+
+    try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+        if (authError || !user) {
+            return res.status(401).json({ error: "Invalid or expired token" });
+        }
+
+        const { data, error: dbError } = await supabase
+            .from('users') // ชื่อตารางตาม Schema
+            .update({
+                username: username,
+                name: name,
+                profile_pic: profile_pic, // ใช้ชื่อคอลัมน์ profile_pic ตาม Schema
+            })
+            .eq('id', user.id.trim()) // อัปเดตเฉพาะแถวที่มี ID ตรงกับคน Login
+            .select();
+
+        if (!data || data.length === 0) {
+            return res.status(404).json({
+                error: "User profile not found in database",
+                searchedID: user.id
+            });
+        }
+
+        if (dbError) {
+            // หาก username ซ้ำหรือ Database มีปัญหา
+            return res.status(400).json({ error: dbError.message });
+        }
+
+        res.status(200).json({
+            message: "Profile updated successfully",
+            user: data[0]
+        });
+
+    } catch (error) {
+        console.error("Update Profile Error:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+
 authRouter.put("/reset-password", async (req, res) => {
     const token = req.headers.authorization?.split(" ")[1];
     const { oldPassword, newPassword } = req.body;
