@@ -58,7 +58,6 @@ authRouter.post("/register", async (req, res) => {
     }
 });
 
-
 authRouter.post("/login", async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -114,6 +113,27 @@ authRouter.get("/get-user", async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: "Internal server error" });
     }
+});
+
+authRouter.get("/get-user/:id", async (req, res) => {
+    const { id } = req.params;
+    const query = `
+        SELECT * FROM users
+        WHERE id = $1`;
+
+    const values = [id];
+    const { rows } = await connectionPool.query(query, values);
+    if (!rows.length) {
+        return res.status(404).json({ error: "User not found" });
+    }
+    res.status(200).json({
+        id: rows[0].id,
+        email: rows[0].email,
+        username: rows[0].username,
+        name: rows[0].name,
+        role: rows[0].role,
+        profile_pic: rows[0].profile_pic,
+    });
 });
 
 authRouter.put("/update-profile", upload.single("profile_pic"), async (req, res) => {
