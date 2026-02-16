@@ -12,7 +12,11 @@ const supabase = createClient(
 const authRouter = Router();
 
 authRouter.post("/register", async (req, res) => {
-    const { email, password, username, name } = req.body;
+    const { email, password, username, name, role } = req.body;
+    
+    // Validate role - must be 'user' or 'admin', default to 'user'
+    const userRole = (role && (role === 'admin' || role === 'user')) ? role : 'user';
+    
     try {
         const usernameCheckQuery = `
             SELECT * FROM users
@@ -47,7 +51,7 @@ authRouter.post("/register", async (req, res) => {
             VALUES ($1, $2, $3, $4)
         RETURNING *;`;
 
-        const values = [supabaseUserId, username, name, "user"];
+        const values = [supabaseUserId, username, name, userRole];
         const { rows } = await connectionPool.query(query, values);
         res.status(201).json({
             message: "User created successfully",
